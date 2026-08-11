@@ -5,8 +5,10 @@ import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -17,9 +19,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
@@ -32,6 +34,7 @@ public class MessageLoader {
 
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final FileRepository fileRepository;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageReadStatusService messageReadStatusService;
 
@@ -59,25 +62,37 @@ public class MessageLoader {
             String userId) {
         Pageable pageable = PageRequest.of(0, limit, Sort.by("timestamp").descending());
 
-        Page<Message> messagePage = messageRepository
+        Slice<Message> messagePage = messageRepository
                 .findByRoomIdAndTimestampBefore(roomId, before, pageable);
 
         List<Message> messages = messagePage.getContent();
 
-        // DESC로 조회했으므로 ASC로 재정렬 (채팅 UI 표시 순서)
-        List<Message> sortedMessages = messages.reversed();
-        
-        var messageIds = sortedMessages.stream().map(Message::getId).toList();
-        messageReadStatusService.updateReadStatus(messageIds, userId);
+// DESC로 조회했으므로 ASC로 재정렬
+List<Message> sortedMessages = messages.reversed();
 
-        Map<String, User> usersById = findUsersById(sortedMessages);
-        
-        // 메시지 응답 생성
-        List<MessageResponse> messageResponses = sortedMessages.stream()
-                .map(message -> messageResponseMapper.mapToMessageResponse(
-                        message,
-                        usersById.get(message.getSenderId())))
-                .collect(Collectors.toList());
+var messageIds = sortedMessages.stream()
+        .map(Message::getId)
+        .toList();
+
+messageReadStatusService.updateReadStatus(messageIds, userId);
+
+Map<String, User> usersById = findUsersById(sortedMessages);
+
+Map<String, File> filesById = fileRepository.findAllById(
+                sortedMessages.stream()
+                        .map(Message::getFileId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet()))
+        .stream()
+        .collect(Collectors.toMap(File::getId, file -> file));
+
+// 메시지 응답 생성: sender/file을 bulk 조회하여 N+1을 피한다.
+List<MessageResponse> messageResponses = sortedMessages.stream()
+        .map(message -> messageResponseMapper.mapToMessageResponse(
+                message,
+                usersById.get(message.getSenderId()),
+                filesById.get(message.getFileId())))
+        .collect(Collectors.toList());
 
         boolean hasMore = messagePage.hasNext();
 

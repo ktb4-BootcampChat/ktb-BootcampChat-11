@@ -50,7 +50,9 @@ const Register = () => {
       const { name, email, password } = formData;
       await registerContext({ name, email, password });
 
-      // 가입 성공 후 인위적인 대기 없이 로그인 진입점으로 즉시 이동한다.
+      setLoading(false);
+
+      // 가입 성공 후 지연 없이 로그인 화면으로 이동
       await router.replace('/login');
     } catch (err) {
       setError(err.message || '회원가입 처리 중 오류가 발생했습니다.');

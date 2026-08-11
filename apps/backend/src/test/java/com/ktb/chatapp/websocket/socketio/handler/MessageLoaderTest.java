@@ -61,6 +61,7 @@ class MessageLoaderTest {
         messageLoader = new MessageLoader(
                 messageRepository,
                 userRepository,
+                fileRepository,
                 new MessageResponseMapper(fileRepository),
                 messageReadStatusService
         );
@@ -126,11 +127,11 @@ class MessageLoaderTest {
         verify(userRepository, never()).findById(anyString());
     }
     
-    private static @NotNull Page<Message> getMessagePage(List<Message> first30Messages) {
+    private static @NotNull Slice<Message> getMessagePage(List<Message> first30Messages) {
         List<Message> messages = new ArrayList<>(first30Messages.reversed());
         
         Pageable pageable = PageRequest.of(0, 30, Sort.by("timestamp").descending());
-        Page<Message> messagePage = new PageImpl<>(messages, pageable, 50);
+        Slice<Message> messagePage = new SliceImpl<>(messages, pageable, true);
         return messagePage;
     }
     
@@ -142,7 +143,7 @@ class MessageLoaderTest {
         
         // DB는 DESC 정렬로 반환 (최신 것부터)
         // [1시간 전, 2시간 전, ..., 30시간 전]
-        Page<Message> messagePage = getMessagePage(last30Messages);
+        Slice<Message> messagePage = getMessagePage(last30Messages);
         
         when(messageRepository.findByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
